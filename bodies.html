@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+    }
+    canvas {
+      border: 1px solid black;
+      background-color: black;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    canvasCenterX = canvas.width/2;
+    canvasCenterY = canvas.height/2;
+
+    let stars = [];
+    const bodies = [];
+    const initialSpeedScale = 2;
+
+    function getRandomColor() {
+      const letters = '0123456789ABCDEF';
+      let color = '#';
+      
+      for (let i = 0; i < 6; i++) {
+        color += letters[Math.floor(Math.random() * 16)];
+      }
+      
+      return color;
+    }
+
+    // Create a Star class
+    class Star {
+        constructor(x, y, radius, speed) {
+            this.x = x;
+            this.y = y;
+            this.radius = radius;
+            this.speed = speed;
+
+        }
+
+        // Update the position of the star
+        update() {
+            this.x -= this.speed;
+            if (this.x < 0) {
+                this.x = canvas.width;
+                this.y = Math.random() * canvas.height;
+            }
+        }
+
+        // Draw the star on the canvas
+        draw() {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'white';
+            ctx.fill();
+            ctx.closePath();
+        }
+    }
+
+    class CelestialBody {
+      constructor(x, y, mass, ismoving=true, acolor="") {
+        this.x = x;
+        this.y = y;
+        this.mass = mass;
+        this.vx = ismoving ? (Math.random() * 2 - 1) * initialSpeedScale : 0; // Random initial velocity in the x-axis (-1 to 1)
+        this.vy = 0;//ismoving ? (Math.random() * 2 - 1) * initialSpeedScale : 0; // Random initial velocity in the y-axis (-1 to 1)
+        this.ghostTrail = [];
+        this.radius = Math.sqrt(mass);
+        this.color = acolor !== "" ? acolor : getRandomColor();
+      }
+
+      draw() {
+         //Draw the ghost trail
+        for (let i = 0; i < this.ghostTrail.length; i++) {
+          const alpha = (i + 1) / this.ghostTrail.length;
+          ctx.beginPath();
+          ctx.arc(this.ghostTrail[i].x, this.ghostTrail[i].y, Math.sqrt(this.mass), 0, 2 * Math.PI);
+          ctx.fillStyle = `rgba(0, 0, 255, ${alpha})`;
+          ctx.fill();
+          ctx.closePath();
+        }
+
+
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, Math.sqrt(this.mass), 0, 2 * Math.PI);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.closePath();
+        
+      }
+
+      applyGravity(otherBody) {
+        const dx = otherBody.x - this.x;
+        const dy = otherBody.y - this.y;
+        const distance = Math.sqrt(dx * dx + dy * dy) + 5;
+        const force = (this.mass * otherBody.mass) / (distance * distance) * 4;
+        const acceleration = force / this.mass * 0.01;
+
+        this.vx += acceleration * (dx / distance);
+        this.vy += acceleration * (dy / distance);
+      }
+
+
+
+      update() {
+        this.ghostTrail.push({ x: this.x, y: this.y });
+
+        if (this.ghostTrail.length > 20) {
+          this.ghostTrail.shift();
+        }
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Check for collision with the edges of the canvas
+        if (this.x - this.radius < 0 || this.x + this.radius > canvas.width) {
+          this.vx *= -1; // Reverse velocity in the x-axis
+        }
+
+        if (this.y - this.radius < 0 || this.y + this.radius > canvas.height) {
+          this.vy *= -1; // Reverse velocity in the y-axis
+        }
+      }
+
+      checkCollision(otherBody) {
+        const dx = otherBody.x - this.x;
+        const dy = otherBody.y - this.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const minDistance = this.radius + otherBody.radius;
+
+        if (distance < minDistance) {
+          // Calculate the normalized direction vector
+          const nx = dx / distance;
+          const ny = dy / distance;
+
+          // Calculate the minimum translation distance to separate the bodies
+          const overlap = minDistance - distance;
+          const tx = overlap * nx;
+          const ty = overlap * ny;
+
+          // Separate the bodies
+          this.x -= tx / 2;
+          this.y -= ty / 2;
+          otherBody.x += tx / 2;
+          otherBody.y += ty / 2;
+
+          // Calculate the relative velocity
+          const relativeVelocityX = otherBody.vx - this.vx;
+          const relativeVelocityY = otherBody.vy - this.vy;
+
+          // Calculate the impact vector
+          const dotProduct = relativeVelocityX * nx + relativeVelocityY * ny;
+          const impulseX = (2 * dotProduct * nx) / (this.mass + otherBody.mass);
+          const impulseY = (2 * dotProduct * ny) / (this.mass + otherBody.mass);
+
+          // Update the velocities
+          this.vx += impulseX / this.mass;
+          this.vy += impulseY / this.mass;
+          otherBody.vx -= impulseX / otherBody.mass;
+          otherBody.vy -= impulseY / otherBody.mass;
+        }
+      }
+    }
+
+    // Initialize the celestial bodies
+    bodies.push(new CelestialBody(canvasCenterX, canvasCenterY, 10000, false, 'orange')); // Move this body using the mouse
+
+    canvas.addEventListener('mousemove', (event) => {
+      const rect = canvas.getBoundingClientRect();
+      bodies[0].x = event.clientX - rect.left;
+      bodies[0].y = event.clientY - rect.top;
+    });
+    canvas.addEventListener('touchmove', (event) => {
+       event.preventDefault(); // Prevent scrolling on touch devices
+      
+      const touch = event.touches[0]; // Get the first touch point
+      
+      const rect = canvas.getBoundingClientRect();
+      const x = touch.clientX - rect.left; // Calculate the X coordinate relative to the canvas
+      const y = touch.clientY - rect.top; // Calculate the Y coordinate relative to the canvas
+      bodies[0].x = x;
+      bodies[0].y = y;
+      // Do something with the touch coordinates
+      // console.log('Touch Move:', x, y);
+    });
+
+
+     window.addEventListener('resize', (event) => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+
+    for(let i = 0; i < 5; i++) {
+        bodies.push(new CelestialBody(canvas.width / 2, Math.random() * canvas.height, Math.random() * 100 + 2, true, "orange")); // Attracted by the first bod
+    }
+    // bodies.push(new CelestialBody(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 100 + 2)); // Attracted by the first body
+    // bodies.push(new CelestialBody(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 100 + 2)); // Attracted by the first body
+    // bodies.push(new CelestialBody(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 100 + 2)); // Attracted by the first body
+    // bodies.push(new CelestialBody(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 100 + 2)); // Attracted by the first body
+    // bodies.push(new CelestialBody(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 100 + 2)); // Attracted by the first body
+    // bodies.push(new CelestialBody(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 100 + 2)); // Attracted by the first body
+    // bodies.push(new CelestialBody(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 100 + 2)); // Attracted by the first body
+    // bodies.push(new CelestialBody(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 100 + 2)); // Attracted by the first body
+
+
+    // Function to generate stars
+    function generateStars() {
+        for (let i = 0; i < 100; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height;
+            const radius = Math.random() * 1;
+            const speed = Math.random() * 1 + 1;
+            stars.push(new Star(x, y, radius, speed));
+        }
+    }
+
+    function animate() {
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (let i = 0; i < stars.length; i++) {
+            stars[i].update();
+            stars[i].draw();
+        }
+    }
+
+    // generateStars();
+
+
+
+
+
+    function updateFrame() {
+      // Clear the canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // animate();
+
+      // Apply gravity between bodies
+      for (let i = 0; i < bodies.length; i++) {
+        for (let j = 0; j < bodies.length; j++) {
+          if (i !== j) {
+            bodies[i].applyGravity(bodies[j]);
+          }
+        }
+      }
+
+      //    Check collision and update bodies
+      // for (let i = 0; i < bodies.length; i++) {
+      //   for (let j = 0; j < bodies.length; j++) {
+      //       if (i !== j) {
+      //           bodies[i].checkCollision(bodies[j]);
+      //       }
+      //   }
+      //   // bodies[i].update();
+      //   // bodies[i].draw();
+      // }
+
+
+      // for (let i = 0; i < bodies.length; i++) {
+      //   for (let j = i + 1; j < bodies.length; j++) {
+      //     bodies[i].checkCollision(bodies[j]);
+      //   }
+      //   bodies[i].update();
+      //   bodies[i].draw();
+      // }
+
+      //Update and draw bodies
+      for (const body of bodies) {
+        body.update();
+        body.draw();
+      }
+
+      requestAnimationFrame(updateFrame);
+    }
+
+    // Start the animation loop
+    updateFrame();
+  </script>
+</body>
+</html>
