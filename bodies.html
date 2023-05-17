@@ -189,9 +189,7 @@
       const x = touch.clientX - rect.left; // Calculate the X coordinate relative to the canvas
       const y = touch.clientY - rect.top; // Calculate the Y coordinate relative to the canvas
       bodies[0].x = x;
-      bodies[0].y = y;
-      // Do something with the touch coordinates
-      // console.log('Touch Move:', x, y);
+      bodies[0].y = y - Math.sqrt(10000)/2;
     });
 
 
